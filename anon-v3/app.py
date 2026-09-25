@@ -22,34 +22,49 @@ if "scan_results" not in st.session_state:
     st.session_state.scan_results = None
 if "scan_done" not in st.session_state:
     st.session_state.scan_done = False
+if "scan_version" not in st.session_state:
+    st.session_state.scan_version = 0
+if "scan_prefill" not in st.session_state:
+    st.session_state.scan_prefill = None
 
 # ---------------- Padrões de dados sensíveis ----------------
 SENSITIVE_PATTERNS = {
-    # ---- Documentos ----
-    "CPF (formatado)": (r"\d{3}\.\d{3}\.\d{3}-\d{2}", "000.000.000-00"),
-    "CPF (sem pontos)": (r"(?<!\d)\d{11}(?!\d)", "00000000000"),
-    "CNPJ (formatado)": (r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", "00.000.000/0000-00"),
-    "CNPJ (sem pontos)": (r"(?<!\d)\d{14}(?!\d)", "00000000000000"),
+    # ---- Documentos (separadores ultra-flexíveis) ----
+    "CPF": (
+        r"(?<!\d)(\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{2})(?!\d)",
+        "000.000.000-00",
+    ),
+    "CNPJ": (
+        r"(?<!\d)(\d{2}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{4}[\s\.\-\/]*\d{2})(?!\d)",
+        "00.000.000/0000-00",
+    ),
+    "PIS/PASEP": (r"(?<!\d)\d{3}\.\d{5}\.\d{2}-\d(?!\d)", "000.00000.00-0"),
+    "RG": (
+        r"(?i)\bRG[:\s\-]*([\d\.\-]{7,12}(?:\s*[A-Z]{2,3})?)\b",
+        "RG Anonimo",
+    ),
+    "CNH": (r"(?i)\bCNH[:\s\-]*(\d{9,11})\b", "CNH Anonima"),
+    "CTPS": (r"(?i)\bCTPS[:\s\-]*([\d]{5,7}[\s\/]?[\d]{4}[\s\/\-]?[\d]{2})\b", "CTPS Anonima"),
     "CEP": (r"\b\d{5}-\d{3}\b", "00000-000"),
     # ---- Contato ----
     "E-mail": (r"[\w\.-]+@[\w\.-]+\.\w+", "anonimo@email.com"),
-    "Telefone": (r"\(\d{2}\)\s?\d{4,5}[-\s]?\d{4}", "(00) 00000-0000"),
+    "Telefone": (
+        r"(?<!\d)(?:\(\d{2}\)\s?|\d{2}\s?)\d{4,5}[\s\-]?\d{4}(?!\d)",
+        "(00) 00000-0000",
+    ),
     "Chave PIX aleatoria": (
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
         "00000000-0000-0000-0000-000000000000",
     ),
     # ---- Financeiro ----
-    "Cartao de credito": (r"\b(?:\d{4}[\s-]?){3}\d{4}\b", "0000 0000 0000 0000"),
+    "Cartao de credito": (r"\b(?:\d{4}[\s\-]?){3}\d{4}\b", "0000 0000 0000 0000"),
     "Valor R$": (r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?", "R$ 0,00"),
-    # ---- Placas ----
-    "Placa de veiculo": (r"\b[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}\b", "AAA-0000"),
-    # ---- Nomes (somente apos rotulos) ----
-    # Regras:
-    #   - rotulo case-insensitive (Nome, Empregado, Contratado, Empregador, etc.)
-    #   - separador ':' ou '-'
-    #   - nome DEVE comecar com MAIUSCULA (elimina fragmentos tipo "izadas do...")
-    #   - aceita "DE", "DA", "DO", "DOS", "DAS" no meio (nomes compostos)
-    #   - para antes de: | ; , CPF RG CNPJ R$ digito - ou fim
+    # ---- Veículos ----
+    "Placa de veiculo": (
+        r"(?<![A-Z0-9])(?:[A-Z]{3}[\-\s]?\d[A-Z0-9]\d{2}|[A-Z]{3}\d[A-Z]\d{2})(?![A-Z0-9])",
+        "AAA-0000",
+    ),
+    # ---- Nomes (após rótulos) ----
     "Nome apos rotulo": (
         r"(?i:(?:nome(?:\s+completo|\s+do|\s+da|\s+empregado)?|"
         r"empregado|empregada|empregador|empregadora|"
@@ -58,16 +73,12 @@ SENSITIVE_PATTERNS = {
         r"cliente|fornecedor|fornecedora|paciente|"
         r"testemunha|responsavel|representante|"
         r"autor|autora|reu|réu|advogado|advogada))"
-        r"\s*[:\-]\s*"
-        r"("
-        r"  [A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-]+"
-        r"  (?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-]+){0,5}"
-        r")"
-        r"(?=\s*(?:\||;|,|CPF|RG|CNPJ|R\$|\d|$|-))",
+        r"[\s:\-]*"
+        r"([A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*){0,6})"
+        r"(?=\s*(?:\||;|CPF|RG|CNPJ|R\$|\d|$))",
         "Nome Anonimo",
     ),
-    # ---- Endereco ----
-    # Exige uma LETRA real depois do logradouro (elimina "EST ---")
+    # ---- Endereço ----
     "Endereco (logradouro)": (
         r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+"
         r"[A-Za-zÀ-ÿ][^\n,;|]{2,80}",
@@ -221,8 +232,7 @@ with st.sidebar:
     mode = st.radio(
         "Modo de anonimizacao",
         ["Substituir texto", "Tarjar (tarja preta)"],
-        help="Substituir troca o valor pelo que voce digitar. "
-             "Tarjar apenas cobre com preto.",
+        help="Substituir troca o valor pelo que voce digitar. Tarjar apenas cobre com preto.",
     )
 
     use_regex = st.checkbox(
@@ -238,19 +248,13 @@ with st.sidebar:
 
     st.divider()
 
-    auto_font = st.checkbox(
-        "Ajustar tamanho da fonte automaticamente",
-        value=True,
-    )
+    auto_font = st.checkbox("Ajustar tamanho da fonte automaticamente", value=True)
     manual_font_size = st.slider(
         "Tamanho da fonte manual",
         min_value=6, max_value=24, value=10,
         disabled=auto_font,
     )
-    expand_box = st.checkbox(
-        "Expandir caixa de texto ao substituir",
-        value=True,
-    )
+    expand_box = st.checkbox("Expandir caixa de texto ao substituir", value=True)
 
     st.divider()
     st.markdown("**Exemplos de Regex uteis:**")
@@ -279,10 +283,8 @@ with tab_app:
     # --------- Scanner ---------
     st.subheader("Scanner de dados sensiveis (opcional)")
     st.caption(
-        "Nao sabe quais dados sensiveis existem no PDF? Clique em escanear — "
-        "o app procura por CPF (com/sem pontos), CNPJ, e-mail, telefone, cartao, "
-        "CEP, PIX, placas, NOMES (somente apos rotulos como NOME:, EMPREGADO:, "
-        "CONTRATADO:, EMPREGADOR:) e ENDERECOS."
+        "Clique em escanear — o app procura por CPF, CNPJ, RG, PIS, CNH, CTPS, "
+        "CEP, e-mail, telefone, cartao, PIX, placas, NOMES (apos rotulos) e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
@@ -297,7 +299,21 @@ with tab_app:
                      disabled=not st.session_state.scan_done):
             st.session_state.scan_results = None
             st.session_state.scan_done = False
+            st.session_state.scan_version += 1
             st.rerun()
+
+    # Debug: ver texto extraido
+    if uploaded:
+        with st.expander("🔍 Debug — ver texto extraido da pagina 1 (para diagnosticar)"):
+            try:
+                d = fitz.open(stream=uploaded.getvalue(), filetype="pdf")
+                if len(d) > 0:
+                    raw = d[0].get_text()
+                    st.caption(f"Total: {len(raw)} caracteres. Mostrando ate 3000.")
+                    st.text(raw[:3000])
+                d.close()
+            except Exception as e:
+                st.error(f"Erro ao ler: {e}")
 
     if scan_btn and uploaded:
         with st.spinner("Escaneando o PDF..."):
@@ -305,6 +321,7 @@ with tab_app:
                 found = scan_sensitive(uploaded.getvalue())
                 st.session_state.scan_results = found
                 st.session_state.scan_done = True
+                st.session_state.scan_version += 1
                 st.rerun()
             except Exception as e:
                 st.exception(e)
@@ -314,8 +331,8 @@ with tab_app:
 
         if not found:
             st.info(
-                "Nenhum dado sensivel foi detectado pelos padroes automaticos. "
-                "Voce ainda pode adicionar regras manuais abaixo."
+                "Nenhum dado sensivel foi detectado. Veja o Debug acima para conferir "
+                "como o texto esta sendo extraido."
             )
         else:
             rows = []
@@ -334,16 +351,15 @@ with tab_app:
             total_ocorr = int(df["Ocorrencias"].sum())
             st.success(
                 f"Encontrados **{total_itens}** valores unicos em "
-                f"**{total_ocorr}** ocorrencia(s). Filtre por tipo e marque os que deseja anonimizar:"
+                f"**{total_ocorr}** ocorrencia(s). Filtre por tipo e marque:"
             )
 
-            # --- Filtro por tipo ---
             tipos_disp = sorted(df["Tipo"].unique().tolist())
             tipos_sel = st.multiselect(
                 "🔽 Filtrar por tipo (opcional)",
                 options=tipos_disp,
                 default=[],
-                help="Deixe vazio para ver TODOS. Ou selecione apenas os tipos que quer revisar.",
+                help="Deixe vazio para ver TODOS.",
             )
 
             if tipos_sel:
@@ -353,17 +369,27 @@ with tab_app:
 
             st.caption(f"Mostrando **{len(df_view)}** de **{len(df)}** valores.")
 
-            editor_key = "scan_editor__" + ("_".join(sorted(tipos_sel)) if tipos_sel else "all")
-
+            # Botões de marcar/desmarcar (usando prefill + version para evitar crash)
             c1, c2 = st.columns([1, 1])
             with c1:
                 if st.button("Marcar todos os visiveis", use_container_width=True):
-                    st.session_state[editor_key] = df_view.assign(Anonimizar=True)
+                    st.session_state.scan_prefill = "all_true"
+                    st.session_state.scan_version += 1
                     st.rerun()
             with c2:
                 if st.button("Desmarcar todos os visiveis", use_container_width=True):
-                    st.session_state[editor_key] = df_view.assign(Anonimizar=False)
+                    st.session_state.scan_prefill = "all_false"
+                    st.session_state.scan_version += 1
                     st.rerun()
+
+            # Aplica prefill (uma vez)
+            if st.session_state.scan_prefill == "all_true":
+                df_view = df_view.assign(Anonimizar=True)
+            elif st.session_state.scan_prefill == "all_false":
+                df_view = df_view.assign(Anonimizar=False)
+
+            tipos_key = "_".join(sorted(tipos_sel)) if tipos_sel else "all"
+            editor_key = f"scan_editor_v{st.session_state.scan_version}__{tipos_key}"
 
             edited_df = st.data_editor(
                 df_view,
@@ -383,6 +409,9 @@ with tab_app:
                 use_container_width=True,
                 key=editor_key,
             )
+
+            # Limpa o prefill depois de renderizar
+            st.session_state.scan_prefill = None
 
             if st.button("Adicionar selecionados como regras", type="primary",
                          use_container_width=True):
@@ -405,10 +434,7 @@ with tab_app:
                         if r["find"].strip() or r["replace"].strip()
                     ] or [{"find": "", "replace": ""}]
 
-                    st.success(
-                        f"{adicionados} regra(s) adicionada(s) a lista. "
-                        "Use com Regex DESATIVADO para maxima precisao."
-                    )
+                    st.success(f"{adicionados} regra(s) adicionada(s).")
                     st.rerun()
 
     # --------- Regras ---------
@@ -500,7 +526,7 @@ with tab_app:
 
 
 # ==================================================================
-# TAB 2 — MANUAL (le do arquivo manual.md)
+# TAB 2 — MANUAL
 # ==================================================================
 with tab_manual:
     st.title("Manual de Uso")
@@ -510,9 +536,6 @@ with tab_manual:
             manual_content = f.read()
         st.markdown(manual_content)
     except FileNotFoundError:
-        st.error(
-            "Arquivo `manual.md` nao encontrado. "
-            "Certifique-se de que ele esta na raiz do repositorio, ao lado do `app.py`."
-        )
+        st.error("Arquivo `manual.md` nao encontrado na raiz do repositorio.")
     except Exception as e:
         st.exception(e)
