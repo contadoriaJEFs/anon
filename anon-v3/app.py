@@ -44,22 +44,33 @@ SENSITIVE_PATTERNS = {
     # ---- Placas ----
     "Placa de veiculo": (r"\b[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}\b", "AAA-0000"),
     # ---- Nomes (somente apos rotulos) ----
+    # Regras:
+    #   - rotulo case-insensitive (Nome, Empregado, Contratado, Empregador, etc.)
+    #   - separador ':' ou '-'
+    #   - nome DEVE comecar com MAIUSCULA (elimina fragmentos tipo "izadas do...")
+    #   - aceita "DE", "DA", "DO", "DOS", "DAS" no meio (nomes compostos)
+    #   - para antes de: | ; , CPF RG CNPJ R$ digito - ou fim
     "Nome apos rotulo": (
-        r"(?i:(?:nome(?:\s+completo|\s+do|\s+da)?|"
+        r"(?i:(?:nome(?:\s+completo|\s+do|\s+da|\s+empregado)?|"
         r"empregado|empregada|empregador|empregadora|"
         r"contratado|contratada|contratante|"
         r"funcionario|funcionaria|colaborador|colaboradora|"
         r"cliente|fornecedor|fornecedora|paciente|"
         r"testemunha|responsavel|representante|"
         r"autor|autora|reu|réu|advogado|advogada))"
-        r"\s*[:\-]?\s*"
-        r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ'\-]+){1,6})"
-        r"(?=\s*(?:CPF|RG|CNPJ|R\$|\d|,|;|\.|$))",
+        r"\s*[:\-]\s*"
+        r"("
+        r"  [A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-]+"
+        r"  (?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-]+){0,5}"
+        r")"
+        r"(?=\s*(?:\||;|,|CPF|RG|CNPJ|R\$|\d|$|-))",
         "Nome Anonimo",
     ),
     # ---- Endereco ----
+    # Exige uma LETRA real depois do logradouro (elimina "EST ---")
     "Endereco (logradouro)": (
-        r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+[^\n,;]{3,80}",
+        r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+"
+        r"[A-Za-zÀ-ÿ][^\n,;|]{2,80}",
         "Endereco Anonimo",
     ),
 }
@@ -271,7 +282,7 @@ with tab_app:
         "Nao sabe quais dados sensiveis existem no PDF? Clique em escanear — "
         "o app procura por CPF (com/sem pontos), CNPJ, e-mail, telefone, cartao, "
         "CEP, PIX, placas, NOMES (somente apos rotulos como NOME:, EMPREGADO:, "
-        "CONTRATADO:) e ENDERECOS."
+        "CONTRATADO:, EMPREGADOR:) e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
