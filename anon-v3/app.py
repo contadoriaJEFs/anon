@@ -41,26 +41,19 @@ SENSITIVE_PATTERNS = {
     # ---- Financeiro ----
     "Cartao de credito": (r"\b(?:\d{4}[\s-]?){3}\d{4}\b", "0000 0000 0000 0000"),
     "Valor R$": (r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?", "R$ 0,00"),
-    # ---- Datas / Placas ----
-    "Data": (r"\b\d{2}/\d{2}/\d{4}\b", "00/00/0000"),
+    # ---- Placas ----
     "Placa de veiculo": (r"\b[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}\b", "AAA-0000"),
-    # ---- Nomes ----
-    "Nome em CAIXA ALTA": (
-        r"\b[A-ZÀ-ÜÇÑ][A-ZÀ-ÜÇÑ]{1,}(?:\s+[A-ZÀ-ÜÇÑ]{1,}){1,5}\b",
-        "NOME ANONIMO",
-    ),
+    # ---- Nomes (somente apos rotulos) ----
     "Nome apos rotulo": (
-        r"(?i:(?:empregado|empregada|empregador|empregadora|"
+        r"(?i:(?:nome(?:\s+completo|\s+do|\s+da)?|"
+        r"empregado|empregada|empregador|empregadora|"
         r"contratado|contratada|contratante|"
         r"funcionario|funcionaria|colaborador|colaboradora|"
-        r"cliente|fornecedor|fornecedora|paciente|aluno|aluna|"
-        r"responsavel|representante|testemunha|"
-        r"autor|autora|reu|réu|"
-        r"advogado|advogada|medico|médico|medica|médica|"
-        r"nome(?:\s+completo|\s+do|\s+da)?|"
-        r"sr\.?|sra\.?|srta\.?|dr\.?|dra\.?))"
+        r"cliente|fornecedor|fornecedora|paciente|"
+        r"testemunha|responsavel|representante|"
+        r"autor|autora|reu|réu|advogado|advogada))"
         r"\s*[:\-]?\s*"
-        r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ'\-]+){1,5})"
+        r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ'\-]+){1,6})"
         r"(?=\s*(?:CPF|RG|CNPJ|R\$|\d|,|;|\.|$))",
         "Nome Anonimo",
     ),
@@ -277,7 +270,8 @@ with tab_app:
     st.caption(
         "Nao sabe quais dados sensiveis existem no PDF? Clique em escanear — "
         "o app procura por CPF (com/sem pontos), CNPJ, e-mail, telefone, cartao, "
-        "CEP, PIX, placas, NOMES (caixa alta ou apos rotulos) e ENDERECOS."
+        "CEP, PIX, placas, NOMES (somente apos rotulos como NOME:, EMPREGADO:, "
+        "CONTRATADO:) e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
@@ -338,8 +332,7 @@ with tab_app:
                 "🔽 Filtrar por tipo (opcional)",
                 options=tipos_disp,
                 default=[],
-                help="Deixe vazio para ver TODOS. Ou selecione apenas os tipos que quer revisar "
-                     "(ex: so 'CPF (sem pontos)' e 'Nome em CAIXA ALTA').",
+                help="Deixe vazio para ver TODOS. Ou selecione apenas os tipos que quer revisar.",
             )
 
             if tipos_sel:
