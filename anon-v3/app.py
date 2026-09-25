@@ -29,9 +29,13 @@ if "scan_prefill" not in st.session_state:
 
 # ---------------- Padrões de dados sensíveis ----------------
 SENSITIVE_PATTERNS = {
-    # ---- Documentos (separadores ultra-flexíveis) ----
+    # ============ DOCUMENTOS ============
     "CPF": (
         r"(?<!\d)(\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{2})(?!\d)",
+        "000.000.000-00",
+    ),
+    "CPF (apos rotulo)": (
+        r"(?i)\bCPF[\s:.\-]*([\d\.\-\s\/\*]{7,20}?)(?=\s*(?:\||;|,|Matr|RG|$))",
         "000.000.000-00",
     ),
     "CNPJ": (
@@ -40,13 +44,19 @@ SENSITIVE_PATTERNS = {
     ),
     "PIS/PASEP": (r"(?<!\d)\d{3}\.\d{5}\.\d{2}-\d(?!\d)", "000.00000.00-0"),
     "RG": (
-        r"(?i)\bRG[:\s\-]*([\d\.\-]{7,12}(?:\s*[A-Z]{2,3})?)\b",
+        r"(?i)\bRG[\s:\-]*([\d\.\-\*]{7,15}(?:\s*[A-Z]{2,3})?)\b",
         "RG Anonimo",
     ),
-    "CNH": (r"(?i)\bCNH[:\s\-]*(\d{9,11})\b", "CNH Anonima"),
-    "CTPS": (r"(?i)\bCTPS[:\s\-]*([\d]{5,7}[\s\/]?[\d]{4}[\s\/\-]?[\d]{2})\b", "CTPS Anonima"),
+    "CNH": (
+        r"(?i)\bCNH[\s:\-]*([\d\.\-\*]{9,14})\b",
+        "CNH Anonima",
+    ),
+    "CTPS": (
+        r"(?i)\bCTPS[\s:\-]*([\d\.\-\s\/\*]{8,20}?)(?=\s*(?:\||;|,|$))",
+        "CTPS Anonima",
+    ),
     "CEP": (r"\b\d{5}-\d{3}\b", "00000-000"),
-    # ---- Contato ----
+    # ============ CONTATO ============
     "E-mail": (r"[\w\.-]+@[\w\.-]+\.\w+", "anonimo@email.com"),
     "Telefone": (
         r"(?<!\d)(?:\(\d{2}\)\s?|\d{2}\s?)\d{4,5}[\s\-]?\d{4}(?!\d)",
@@ -56,15 +66,15 @@ SENSITIVE_PATTERNS = {
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
         "00000000-0000-0000-0000-000000000000",
     ),
-    # ---- Financeiro ----
+    # ============ FINANCEIRO ============
     "Cartao de credito": (r"\b(?:\d{4}[\s\-]?){3}\d{4}\b", "0000 0000 0000 0000"),
     "Valor R$": (r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?", "R$ 0,00"),
-    # ---- Veículos ----
+    # ============ VEICULOS ============
     "Placa de veiculo": (
         r"(?<![A-Z0-9])(?:[A-Z]{3}[\-\s]?\d[A-Z0-9]\d{2}|[A-Z]{3}\d[A-Z]\d{2})(?![A-Z0-9])",
         "AAA-0000",
     ),
-    # ---- Nomes (após rótulos) ----
+    # ============ NOMES (apos rotulos) ============
     "Nome apos rotulo": (
         r"(?i:(?:nome(?:\s+completo|\s+do|\s+da|\s+empregado)?|"
         r"empregado|empregada|empregador|empregadora|"
@@ -75,10 +85,10 @@ SENSITIVE_PATTERNS = {
         r"autor|autora|reu|réu|advogado|advogada))"
         r"[\s:\-]*"
         r"([A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*){0,6})"
-        r"(?=\s*(?:\||;|CPF|RG|CNPJ|R\$|\d|$))",
+        r"(?=\s*(?:\||;|CPF|RG|CNPJ|Matr|R\$|\d|$))",
         "Nome Anonimo",
     ),
-    # ---- Endereço ----
+    # ============ ENDERECO ============
     "Endereco (logradouro)": (
         r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+"
         r"[A-Za-zÀ-ÿ][^\n,;|]{2,80}",
@@ -89,7 +99,6 @@ SENSITIVE_PATTERNS = {
 
 # ---------------- Funcoes ----------------
 def scan_sensitive(pdf_bytes):
-    """Escaneia o PDF em busca de padroes sensiveis."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     found = {}
     n_pages = len(doc)
@@ -225,7 +234,7 @@ def process_pdf(pdf_bytes, rules, mode, use_regex, case_sensitive,
     return out.getvalue(), total
 
 
-# ---------------- Sidebar (global) ----------------
+# ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("Configuracoes")
 
@@ -280,11 +289,11 @@ with tab_app:
 
     uploaded = st.file_uploader("Carregue o PDF", type=["pdf"])
 
-    # --------- Scanner ---------
     st.subheader("Scanner de dados sensiveis (opcional)")
     st.caption(
-        "Clique em escanear — o app procura por CPF, CNPJ, RG, PIS, CNH, CTPS, "
-        "CEP, e-mail, telefone, cartao, PIX, placas, NOMES (apos rotulos) e ENDERECOS."
+        "Clique em escanear — o app procura por CPF (inclusive mascarado com *), "
+        "CNPJ, RG, PIS, CNH, CTPS, CEP, e-mail, telefone, cartao, PIX, placas, "
+        "NOMES (apos rotulos) e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
@@ -302,9 +311,8 @@ with tab_app:
             st.session_state.scan_version += 1
             st.rerun()
 
-    # Debug: ver texto extraido
     if uploaded:
-        with st.expander("🔍 Debug — ver texto extraido da pagina 1 (para diagnosticar)"):
+        with st.expander("🔍 Debug — ver texto extraido da pagina 1"):
             try:
                 d = fitz.open(stream=uploaded.getvalue(), filetype="pdf")
                 if len(d) > 0:
@@ -369,7 +377,6 @@ with tab_app:
 
             st.caption(f"Mostrando **{len(df_view)}** de **{len(df)}** valores.")
 
-            # Botões de marcar/desmarcar (usando prefill + version para evitar crash)
             c1, c2 = st.columns([1, 1])
             with c1:
                 if st.button("Marcar todos os visiveis", use_container_width=True):
@@ -382,7 +389,6 @@ with tab_app:
                     st.session_state.scan_version += 1
                     st.rerun()
 
-            # Aplica prefill (uma vez)
             if st.session_state.scan_prefill == "all_true":
                 df_view = df_view.assign(Anonimizar=True)
             elif st.session_state.scan_prefill == "all_false":
@@ -410,7 +416,6 @@ with tab_app:
                 key=editor_key,
             )
 
-            # Limpa o prefill depois de renderizar
             st.session_state.scan_prefill = None
 
             if st.button("Adicionar selecionados como regras", type="primary",
