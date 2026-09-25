@@ -52,7 +52,17 @@ SENSITIVE_PATTERNS = {
         r"(?i)\bCTPS[\s:\-]*([\d\.\-\s\/\*]{8,20}?)(?=\s*(?:\||;|,|$))",
         "CTPS Anonima",
     ),
-    "CEP": (r"\b\d{5}-\d{3}\b", "00000-000"),
+    # ============ CEP ============
+    # Regra 1: exige palavra "CEP" antes (com ou sem ":"), aceita 5-3 ou 8 digitos
+    "CEP (apos rotulo)": (
+        r"(?i)\bCEP[\s:.\-]*(\d{5}[\s\-\.]?\d{3}|\d{8})(?!\d)",
+        "00000-000",
+    ),
+    # Regra 2: pega padrao 5-3 em qualquer lugar do documento
+    "CEP (padrao 5-3 em qualquer lugar)": (
+        r"(?<!\d)(\d{5}-\d{3})(?!\d)",
+        "00000-000",
+    ),
     # ============ CONTATO ============
     "E-mail": (r"[\w\.-]+@[\w\.-]+\.\w+", "anonimo@email.com"),
     "Telefone": (
@@ -354,8 +364,9 @@ with tab_app:
     st.subheader("Scanner de dados sensiveis (opcional)")
     st.caption(
         "Clique em escanear — o app procura por CPF (inclusive 12 digitos), "
-        "CNPJ, RG, PIS, CNH, CTPS, CEP, e-mail, telefone, cartao, PIX, placas, "
-        "NOMES (apos rotulos incl. 'Assinado eletronicamente por') e ENDERECOS."
+        "CNPJ, RG, PIS, CNH, CTPS, CEP (com/sem rotulo), e-mail, telefone, "
+        "cartao, PIX, placas, NOMES (apos rotulos incl. 'Assinado eletronicamente por') "
+        "e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
