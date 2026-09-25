@@ -25,18 +25,49 @@ if "scan_done" not in st.session_state:
 
 # ---------------- Padrões de dados sensíveis ----------------
 SENSITIVE_PATTERNS = {
-    "CPF": (r"\d{3}\.\d{3}\.\d{3}-\d{2}", "000.000.000-00"),
-    "CNPJ": (r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", "00.000.000/0000-00"),
+    # ---- Documentos ----
+    "CPF (formatado)": (r"\d{3}\.\d{3}\.\d{3}-\d{2}", "000.000.000-00"),
+    "CPF (sem pontos)": (r"(?<!\d)\d{11}(?!\d)", "00000000000"),
+    "CNPJ (formatado)": (r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", "00.000.000/0000-00"),
+    "CNPJ (sem pontos)": (r"(?<!\d)\d{14}(?!\d)", "00000000000000"),
     "CEP": (r"\b\d{5}-\d{3}\b", "00000-000"),
+    # ---- Contato ----
     "E-mail": (r"[\w\.-]+@[\w\.-]+\.\w+", "anonimo@email.com"),
     "Telefone": (r"\(\d{2}\)\s?\d{4,5}[-\s]?\d{4}", "(00) 00000-0000"),
-    "Cartao de credito": (r"\b(?:\d{4}[\s-]?){3}\d{4}\b", "0000 0000 0000 0000"),
-    "Data": (r"\b\d{2}/\d{2}/\d{4}\b", "00/00/0000"),
-    "Valor R$": (r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?", "R$ 0,00"),
-    "Placa de veiculo": (r"\b[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}\b", "AAA-0000"),
     "Chave PIX aleatoria": (
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
         "00000000-0000-0000-0000-000000000000",
+    ),
+    # ---- Financeiro ----
+    "Cartao de credito": (r"\b(?:\d{4}[\s-]?){3}\d{4}\b", "0000 0000 0000 0000"),
+    "Valor R$": (r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?", "R$ 0,00"),
+    # ---- Datas / Placas ----
+    "Data": (r"\b\d{2}/\d{2}/\d{4}\b", "00/00/0000"),
+    "Placa de veiculo": (r"\b[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}\b", "AAA-0000"),
+    # ---- Nomes ----
+    "Nome em CAIXA ALTA": (
+        r"\b[A-ZÀ-ÜÇÑ][A-ZÀ-ÜÇÑ]{1,}(?:\s+[A-ZÀ-ÜÇÑ]{1,}){1,5}\b",
+        "NOME ANONIMO",
+    ),
+    "Nome apos rotulo": (
+        r"(?i:(?:empregado|empregada|empregador|empregadora|"
+        r"contratado|contratada|contratante|"
+        r"funcionario|funcionaria|colaborador|colaboradora|"
+        r"cliente|fornecedor|fornecedora|paciente|aluno|aluna|"
+        r"responsavel|representante|testemunha|"
+        r"autor|autora|reu|réu|"
+        r"advogado|advogada|medico|médico|medica|médica|"
+        r"nome(?:\s+completo|\s+do|\s+da)?|"
+        r"sr\.?|sra\.?|srta\.?|dr\.?|dra\.?))"
+        r"\s*[:\-]?\s*"
+        r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+(?:\s+[A-Za-zÀ-ÿ'\-]+){1,5})"
+        r"(?=\s*(?:CPF|RG|CNPJ|R\$|\d|,|;|\.|$))",
+        "Nome Anonimo",
+    ),
+    # ---- Endereco ----
+    "Endereco (logradouro)": (
+        r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+[^\n,;]{3,80}",
+        "Endereco Anonimo",
     ),
 }
 
@@ -55,10 +86,13 @@ def scan_sensitive(pdf_bytes):
         for tipo, (pattern, _) in SENSITIVE_PATTERNS.items():
             try:
                 for m in re.finditer(pattern, text):
-                    val = m.group()
-                    if not val:
+                    if m.lastindex is not None and m.lastindex >= 1:
+                        val = m.group(1)
+                    else:
+                        val = m.group()
+                    if not val or not val.strip():
                         continue
-                    found.setdefault((tipo, val), set()).add(pno + 1)
+                    found.setdefault((tipo, val.strip()), set()).add(pno + 1)
             except re.error:
                 continue
     doc.close()
@@ -242,7 +276,8 @@ with tab_app:
     st.subheader("Scanner de dados sensiveis (opcional)")
     st.caption(
         "Nao sabe quais dados sensiveis existem no PDF? Clique em escanear — "
-        "o app procura por CPF, CNPJ, e-mail, telefone, cartao, CEP, PIX, placas e mais."
+        "o app procura por CPF (com/sem pontos), CNPJ, e-mail, telefone, cartao, "
+        "CEP, PIX, placas, NOMES (caixa alta ou apos rotulos) e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
@@ -286,7 +321,7 @@ with tab_app:
                     "Valor": valor,
                     "Paginas": ", ".join(str(p) for p in sorted(pages)),
                     "Ocorrencias": len(pages),
-                    "Substituir por": SENSITIVE_PATTERNS[tipo][1],
+                    "Substituir por": SENSITIVE_PATTERNS.get(tipo, (None, "ANONIMO"))[1],
                 })
 
             df = pd.DataFrame(rows)
@@ -294,21 +329,40 @@ with tab_app:
             total_ocorr = int(df["Ocorrencias"].sum())
             st.success(
                 f"Encontrados **{total_itens}** valores unicos em "
-                f"**{total_ocorr}** ocorrencia(s). Marque os que deseja anonimizar:"
+                f"**{total_ocorr}** ocorrencia(s). Filtre por tipo e marque os que deseja anonimizar:"
             )
+
+            # --- Filtro por tipo ---
+            tipos_disp = sorted(df["Tipo"].unique().tolist())
+            tipos_sel = st.multiselect(
+                "🔽 Filtrar por tipo (opcional)",
+                options=tipos_disp,
+                default=[],
+                help="Deixe vazio para ver TODOS. Ou selecione apenas os tipos que quer revisar "
+                     "(ex: so 'CPF (sem pontos)' e 'Nome em CAIXA ALTA').",
+            )
+
+            if tipos_sel:
+                df_view = df[df["Tipo"].isin(tipos_sel)].reset_index(drop=True)
+            else:
+                df_view = df.copy()
+
+            st.caption(f"Mostrando **{len(df_view)}** de **{len(df)}** valores.")
+
+            editor_key = "scan_editor__" + ("_".join(sorted(tipos_sel)) if tipos_sel else "all")
 
             c1, c2 = st.columns([1, 1])
             with c1:
-                if st.button("Marcar todos", use_container_width=True):
-                    st.session_state["scan_editor"] = df.assign(Anonimizar=True)
+                if st.button("Marcar todos os visiveis", use_container_width=True):
+                    st.session_state[editor_key] = df_view.assign(Anonimizar=True)
                     st.rerun()
             with c2:
-                if st.button("Desmarcar todos", use_container_width=True):
-                    st.session_state["scan_editor"] = df.assign(Anonimizar=False)
+                if st.button("Desmarcar todos os visiveis", use_container_width=True):
+                    st.session_state[editor_key] = df_view.assign(Anonimizar=False)
                     st.rerun()
 
             edited_df = st.data_editor(
-                df,
+                df_view,
                 column_config={
                     "Anonimizar": st.column_config.CheckboxColumn(
                         "Anonimizar", default=False, width="small"
@@ -323,20 +377,20 @@ with tab_app:
                 },
                 hide_index=True,
                 use_container_width=True,
-                key="scan_editor",
+                key=editor_key,
             )
 
             if st.button("Adicionar selecionados como regras", type="primary",
                          use_container_width=True):
                 selecionados = edited_df[edited_df["Anonimizar"] == True]
                 if selecionados.empty:
-                    st.warning("Nenhum item marcado.")
+                    st.warning("Nenhum item marcado nesta visualizacao.")
                 else:
                     adicionados = 0
                     for _, row in selecionados.iterrows():
                         find_val = str(row["Valor"])
-                        repl_val = str(row["Substituir por"]) if str(row["Substituir por"]).strip() \
-                            else SENSITIVE_PATTERNS[row["Tipo"]][1]
+                        repl_val = str(row["Substituir por"]).strip() if str(row["Substituir por"]).strip() \
+                            else SENSITIVE_PATTERNS.get(row["Tipo"], (None, "ANONIMO"))[1]
                         ja_existe = any(r["find"] == find_val for r in st.session_state.rules)
                         if not ja_existe:
                             st.session_state.rules.append({"find": find_val, "replace": repl_val})
