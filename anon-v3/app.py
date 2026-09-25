@@ -31,7 +31,7 @@ if "scan_prefill" not in st.session_state:
 SENSITIVE_PATTERNS = {
     # ============ DOCUMENTOS ============
     "CPF": (
-        r"(?<!\d)(\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{2})(?!\d)",
+        r"(?<!\d)(\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{3}[\s\.\-\/]*\d{2,3})(?!\d)",
         "000.000.000-00",
     ),
     "CPF (apos rotulo)": (
@@ -47,10 +47,7 @@ SENSITIVE_PATTERNS = {
         r"(?i)\bRG[\s:\-]*([\d\.\-\*]{7,15}(?:\s*[A-Z]{2,3})?)\b",
         "RG Anonimo",
     ),
-    "CNH": (
-        r"(?i)\bCNH[\s:\-]*([\d\.\-\*]{9,14})\b",
-        "CNH Anonima",
-    ),
+    "CNH": (r"(?i)\bCNH[\s:\-]*([\d\.\-\*]{9,14})\b", "CNH Anonima"),
     "CTPS": (
         r"(?i)\bCTPS[\s:\-]*([\d\.\-\s\/\*]{8,20}?)(?=\s*(?:\||;|,|$))",
         "CTPS Anonima",
@@ -82,19 +79,87 @@ SENSITIVE_PATTERNS = {
         r"funcionario|funcionaria|colaborador|colaboradora|"
         r"cliente|fornecedor|fornecedora|paciente|"
         r"testemunha|responsavel|representante|"
-        r"autor|autora|reu|réu|advogado|advogada))"
+        r"autor|autora|reu|réu|advogado|advogada|"
+        r"assinado\s+eletronicamente\s+por))"
         r"[\s:\-]*"
         r"([A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ü][A-ZÀ-Üa-zà-ÿ'\-\.]*){0,6})"
-        r"(?=\s*(?:\||;|CPF|RG|CNPJ|Matr|R\$|\d|$))",
+        r"(?=\s*(?:\||;|,|\s\-\s|CPF|RG|CNPJ|Matr|R\$|\d|$))",
         "Nome Anonimo",
     ),
-    # ============ ENDERECO ============
+    # ============ ENDERECO (inclui numero apos virgula) ============
     "Endereco (logradouro)": (
-        r"(?i)\b(?:rua|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+"
-        r"[A-Za-zÀ-ÿ][^\n,;|]{2,80}",
+        r"(?i)\b(?:rua|r\.|avenida|av\.?|alameda|al\.?|travessa|tv\.?|praca|praça|rodovia|rod\.?|estrada|est\.?)\s+"
+        r"[A-Za-zÀ-ÿ][^\n,;|]{2,80}(?:\s*,\s*\d{1,6})?",
         "Endereco Anonimo",
     ),
 }
+
+
+# ---------------- Helpers ----------------
+DASH_VARIANTS = ['-', '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015']
+
+
+def find_term_rects(page, term):
+    """Busca rects para um termo. Fallback: quebra em pedacos e recompoe se search_for falhar."""
+    # Tentativa 1: busca direta
+    try:
+        rects = page.search_for(term)
+    except Exception:
+        rects = []
+    if rects:
+        return rects
+
+    # Tentativa 2: variantes de hifen (caso o PDF use en-dash, em-dash, etc.)
+    if '-' in term:
+        for dash in DASH_VARIANTS[1:]:
+            variant = term.replace('-', dash)
+            try:
+                rects = page.search_for(variant)
+            except Exception:
+                rects = []
+            if rects:
+                return rects
+
+    # Tentativa 3: quebrar em pedacos alfanumericos e recompor
+    parts = re.findall(r'[A-Za-zÀ-ÿ0-9]+', term)
+    parts = [p for p in parts if len(p) >= 2]
+    if len(parts) < 2:
+        return []
+
+    part_rects = []
+    for p in parts:
+        try:
+            r = page.search_for(p)
+        except Exception:
+            r = []
+        for rect in r:
+            part_rects.append(rect)
+
+    if not part_rects:
+        return []
+
+    # Ordena por linha / posicao e agrupa apenas pedacos proximos na mesma linha
+    part_rects.sort(key=lambda r: (round(r.y0, 0), r.x0))
+
+    merged = []
+    i = 0
+    while i < len(part_rects):
+        base = part_rects[i]
+        chain = [base]
+        j = i + 1
+        while j < len(part_rects):
+            nxt = part_rects[j]
+            if abs(nxt.y0 - base.y0) < 3 and 0 <= (nxt.x0 - base.x1) < 20:
+                base = fitz.Rect(base.x0, min(base.y0, nxt.y0), nxt.x1, max(base.y1, nxt.y1))
+                chain.append(nxt)
+                j += 1
+            else:
+                break
+        if len(chain) >= 2:
+            merged.append(base)
+        i = j
+
+    return merged
 
 
 # ---------------- Funcoes ----------------
@@ -158,10 +223,7 @@ def process_pdf(pdf_bytes, rules, mode, use_regex, case_sensitive,
             for term in terms:
                 if not term:
                     continue
-                try:
-                    rects = page.search_for(term)
-                except Exception:
-                    rects = []
+                rects = find_term_rects(page, term)
                 for rect in rects:
                     if mode == "Tarjar (tarja preta)":
                         page.add_redact_annot(rect, fill=(0, 0, 0))
@@ -291,9 +353,9 @@ with tab_app:
 
     st.subheader("Scanner de dados sensiveis (opcional)")
     st.caption(
-        "Clique em escanear — o app procura por CPF (inclusive mascarado com *), "
+        "Clique em escanear — o app procura por CPF (inclusive 12 digitos), "
         "CNPJ, RG, PIS, CNH, CTPS, CEP, e-mail, telefone, cartao, PIX, placas, "
-        "NOMES (apos rotulos) e ENDERECOS."
+        "NOMES (apos rotulos incl. 'Assinado eletronicamente por') e ENDERECOS."
     )
 
     col_scan, col_clear = st.columns([3, 1])
